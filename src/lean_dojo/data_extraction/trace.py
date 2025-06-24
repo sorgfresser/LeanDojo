@@ -24,8 +24,9 @@ from ..utils import working_directory, execute
 
 
 LEAN4_DATA_EXTRACTOR_PATH = Path(__file__).with_name("ExtractData.lean")
+LEAN4_NEW_EXTRACTOR_PATH = Path(__file__).with_name("ExtractDataNew.lean")
 LEAN4_REPL_PATH = Path(__file__).parent.parent / "interaction" / "Lean4Repl.lean"
-assert LEAN4_DATA_EXTRACTOR_PATH.exists() and LEAN4_REPL_PATH.exists()
+assert LEAN4_DATA_EXTRACTOR_PATH.exists() and LEAN4_REPL_PATH.exists() and LEAN4_NEW_EXTRACTOR_PATH.exists()
 
 _PROGRESSBAR_UPDATE_INTERNAL = 5
 
@@ -92,6 +93,13 @@ def is_new_version(v: str) -> bool:
     else:
         return True
 
+def is_newest_version(v: str) -> bool:
+    """Check if ``v`` is at least `4.20.0`."""
+    if not is_new_version(v):
+        return False
+    major, minor, patch = [int(_) for _ in v.split("-")[0].split(".")]
+    assert major >= 4 and minor >= 3
+    return minor >= 20
 
 def check_files(packages_path: Path, no_deps: bool) -> None:
     """Check if all *.lean files have been processed to produce *.ast.json and *.dep_paths files."""
@@ -150,7 +158,10 @@ def _trace(repo: LeanGitRepo, build_deps: bool) -> None:
         shutil.copytree(lean_prefix, str(packages_path / "lean4"))
 
         # Run ExtractData.lean to extract ASTs, tactic states, and premise information.
-        shutil.copyfile(LEAN4_DATA_EXTRACTOR_PATH, LEAN4_DATA_EXTRACTOR_PATH.name)
+        if is_newest_version(get_lean_version()):
+            shutil.copyfile(LEAN4_NEW_EXTRACTOR_PATH, LEAN4_DATA_EXTRACTOR_PATH.name)
+        else:
+            shutil.copyfile(LEAN4_DATA_EXTRACTOR_PATH, LEAN4_DATA_EXTRACTOR_PATH.name)
         dirs_to_monitor = [build_path]
         if build_deps:
             dirs_to_monitor.append(packages_path)
