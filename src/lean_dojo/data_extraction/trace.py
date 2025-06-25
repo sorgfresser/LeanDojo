@@ -22,7 +22,7 @@ from ..constants import NUM_PROCS
 from .traced_data import TracedRepo
 from ..utils import working_directory, execute
 
-
+LEAN4_OLD_EXTRACTOR_PATH = Path(__file__).with_name("ExtractDataOld.lean")
 LEAN4_DATA_EXTRACTOR_PATH = Path(__file__).with_name("ExtractData.lean")
 LEAN4_NEW_EXTRACTOR_PATH = Path(__file__).with_name("ExtractDataNew.lean")
 LEAN4_REPL_PATH = Path(__file__).parent.parent / "interaction" / "Lean4Repl.lean"
@@ -73,6 +73,14 @@ def get_lean_version() -> str:
     output = execute("lean --version", capture_output=True)[0].strip()
     m = re.match(r"Lean \(version (?P<version>\S+?),", output)
     return m["version"]  # type: ignore
+
+def is_old_version(v: str) -> bool:
+    """Check if ``v`` is smaller than 4.19.0"""
+    if not is_new_version(v):
+        return False
+    major, minor, patch = [int(_) for _ in v.split("-")[0].split(".")]
+    assert major >= 4 and minor >= 3
+    return minor < 19
 
 
 def is_new_version(v: str) -> bool:
@@ -160,6 +168,8 @@ def _trace(repo: LeanGitRepo, build_deps: bool) -> None:
         # Run ExtractData.lean to extract ASTs, tactic states, and premise information.
         if is_newest_version(get_lean_version()):
             shutil.copyfile(LEAN4_NEW_EXTRACTOR_PATH, LEAN4_DATA_EXTRACTOR_PATH.name)
+        elif is_old_version(get_lean_version()):
+            shutil.copyfile(LEAN4_OLD_EXTRACTOR_PATH, LEAN4_DATA_EXTRACTOR_PATH.name)
         else:
             shutil.copyfile(LEAN4_DATA_EXTRACTOR_PATH, LEAN4_DATA_EXTRACTOR_PATH.name)
         dirs_to_monitor = [build_path]
