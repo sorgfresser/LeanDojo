@@ -2,7 +2,6 @@
 
 import re
 import os
-import ray
 import json
 import random
 import itertools
@@ -18,7 +17,6 @@ from typing import List, Optional, Dict, Any, Tuple, Union
 from ..utils import (
     is_git_repo,
     compute_md5,
-    ray_actor_pool,
     to_lean_path,
     to_dep_path,
     to_json_path,
@@ -976,26 +974,6 @@ def _build_dependency_graph(
     return G
 
 
-@ray.remote
-class _TracedRepoHelper:
-    """
-    Helper class serving as Ray actor.
-    """
-
-    def __init__(self, root_dir: Path, repo: LeanGitRepo) -> None:
-        self.root_dir = root_dir
-        self.repo = repo
-
-    def parse_traced_file(self, path: Path) -> TracedFile:
-        return TracedFile.from_traced_file(self.root_dir, path, self.repo)
-
-    def save_xml_to_disk(self, tf: TracedFile) -> None:
-        return _save_xml_to_disk(tf)
-
-    def load_xml_from_disk(self, path: Path) -> TracedFile:
-        return TracedFile.from_xml(self.root_dir, path, self.repo)
-
-
 @dataclass(frozen=True, eq=False)
 class TracedRepo:
     """A traced repo is a Lean repo of traced files and additional information, such as
@@ -1114,22 +1092,10 @@ class TracedRepo:
             f"Parsing {len(json_paths)} *.ast.json files in {root_dir} with {NUM_WORKERS} workers"
         )
 
-        if NUM_WORKERS <= 1:
-            traced_files = [
-                TracedFile.from_traced_file(root_dir, path, repo)
-                for path in tqdm(json_paths)
-            ]
-        else:
-            with ray_actor_pool(_TracedRepoHelper, root_dir, repo) as pool:
-                traced_files = list(
-                    tqdm(
-                        pool.map_unordered(
-                            lambda a, p: a.parse_traced_file.remote(p), json_paths
-                        ),
-                        total=len(json_paths),
-                    )
-                )
-
+        traced_files = [
+            TracedFile.from_traced_file(root_dir, path, repo)
+            for path in tqdm(json_paths)
+        ]
         dependencies = repo.get_dependencies(root_dir)
         if build_deps:
             traced_files_graph = _build_dependency_graph(traced_files, root_dir, repo)
@@ -1157,20 +1123,9 @@ class TracedRepo:
         logger.debug(
             f"Saving {num_traced_files} traced XML files to {self.root_dir} with {NUM_WORKERS} workers"
         )
-        if NUM_WORKERS <= 1:
-            for tf in tqdm(self.traced_files, total=num_traced_files):
-                _save_xml_to_disk(tf)
-        else:
-            with ray_actor_pool(_TracedRepoHelper, self.root_dir, self.repo) as pool:
-                list(
-                    tqdm(
-                        pool.map_unordered(
-                            lambda a, tf: a.save_xml_to_disk.remote(tf),
-                            self.traced_files,
-                        ),
-                        total=num_traced_files,
-                    )
-                )
+        for tf in tqdm(self.traced_files, total=num_traced_files):
+            _save_xml_to_disk(tf)
+
 
     @classmethod
     def load_from_disk(
@@ -1196,21 +1151,10 @@ class TracedRepo:
                 if not "lake-packages/" in str(p) and not ".lake/packages" in str(p)
             ]
 
-        if NUM_WORKERS <= 1:
-            traced_files = [
-                TracedFile.from_xml(root_dir, path, repo) for path in tqdm(xml_paths)
-            ]
-        else:
-            with ray_actor_pool(_TracedRepoHelper, root_dir, repo) as pool:
-                traced_files = list(
-                    tqdm(
-                        pool.map_unordered(
-                            lambda a, path: a.load_xml_from_disk.remote(path), xml_paths
-                        ),
-                        total=len(xml_paths),
-                    )
-                )
-
+        traced_files = [
+            TracedFile.from_xml(root_dir, path, repo) for path in tqdm(xml_paths)
+        ]
+        
         dependencies = repo.get_dependencies(root_dir)
         if build_deps:
             traced_files_graph = _build_dependency_graph(traced_files, root_dir, repo)
