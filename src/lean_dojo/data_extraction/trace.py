@@ -123,9 +123,12 @@ def check_files(packages_path: Path, no_deps: bool) -> None:
         for p in cwd.glob("**/build/ir/**/*.dep_paths")
         if not no_deps or not p.is_relative_to(packages_path)
     }
+    
+    lib_dir = "/build/lib" if is_old_version(get_lean_version()) else "/build/lib/lean"
+
     oleans = {
-        Path(str(p.with_suffix("")).replace("/build/lib/lean/", "/build/ir/"))
-        for p in cwd.glob("**/build/lib/lean/**/*.olean")
+        Path(str(p.with_suffix("")).replace(f"{lib_dir}/", "/build/ir/"))
+        for p in cwd.glob(f"**{lib_dir}/**/*.olean")
         if not no_deps or not p.is_relative_to(packages_path)
     }
     assert len(jsons) <= len(oleans) and len(deps) <= len(oleans)
@@ -196,6 +199,12 @@ def _trace(repo: LeanGitRepo, build_deps: bool) -> None:
                 oup.write("\nlean_lib Lean4Repl {\n\n}\n")
         else:
             assert os.path.exists("lakefile.toml")
+            # Remove linters
+            with open("lakefile.toml", "r") as f:
+                lines = f.readlines()
+            lines = [line for line in lines if not line.startswith("linter.")]
+            with open("lakefile.toml", "w") as f:
+                f.writelines(lines)
             with open("lakefile.toml", "a") as oup:
                 oup.write('\n[[lean_lib]]\nname = "Lean4Repl"\n')
 
