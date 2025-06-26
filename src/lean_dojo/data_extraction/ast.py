@@ -1400,12 +1400,11 @@ class ModuleImportNode(Node):
         assert node_data["info"] == "none"
         start, end = None, None
         children = _parse_children(node_data, lean_file)
-
-        assert isinstance(children[0], AtomNode) and children[0].val == "import"
-        if isinstance(children[2], IdentNode):
-            module = children[2].val
-        else:
-            module = None
+        module = None
+        for child in children:
+            if isinstance(child, IdentNode):
+                module = child.val
+                break
 
         return cls(lean_file, start, end, children, module)
 
@@ -1477,11 +1476,13 @@ class CommandSectionNode(Node):
         assert node_data["info"] == "none"
         start, end = None, None
         children = _parse_children(node_data, lean_file)
-
-        assert len(children) == 2
+        assert len(children) == 2 or len(children) == 3
+        if len(children ) == 3:
+            children.pop(0)
+        
         assert isinstance(children[0], AtomNode) and children[0].val == "section"
         assert isinstance(children[1], NullNode)
-
+        
         if len(children[1].children) == 1 and isinstance(
             children[1].children[0], IdentNode
         ):
