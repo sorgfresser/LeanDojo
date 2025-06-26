@@ -690,8 +690,10 @@ class TracedFile:
                         if import_line.endswith(
                             suffix + ".lean"
                         ) or import_line.endswith(suffix + "/default.lean"):
-                            object.__setattr__(node, "path", Path(import_line))
-
+                            path = Path(import_line)
+                            if path.is_absolute():
+                                path = path.relative_to(lean_file.root_dir)
+                            object.__setattr__(node, "path", path)
         ast.traverse_preorder(_callback, node_cls=None)
 
     def check_sanity(self) -> None:
@@ -922,15 +924,26 @@ class TracedFile:
         assert path.suffixes == [".trace", ".xml"]
         lean_path = to_lean_path(root_dir, path)
         lean_file = LeanFile(root_dir, lean_path)
-
-        tree = etree.parse(path).getroot()
+        
+        etree_iter = etree.iterparse(path, events=("start", "end"), huge_tree=True)
+        _, tree = next(etree_iter)
         assert tree.tag == "TracedFile"
         assert tree.attrib["path"] == str(lean_path)
         assert tree.attrib["md5"] == compute_md5(lean_file.abs_path)
-
-        ast_tree, comments_tree = list(tree)
+        
+        start, ast_tree = next(etree_iter)
+        assert start == "start"
+        # Find end
+        while etree_iter:
+            start, elem = next(etree_iter)
+            if start == "end" and elem == ast_tree:
+                break
+        assert elem == ast_tree
+        start, _ = next(etree_iter)
+        assert start == "start"
+        
         ast = FileNode.from_xml(ast_tree, lean_file)
-        comments = [Comment.from_xml(c) for c in comments_tree]
+        comments = [Comment.from_xml(elem[1]) for elem in etree_iter if elem[0] == "start"]
 
         return cls(root_dir, repo, lean_file, ast, comments)
 
