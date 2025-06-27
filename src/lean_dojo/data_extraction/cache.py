@@ -51,30 +51,28 @@ class Cache:
         dirpath = self.cache_dir / dirname
         cache_path = self.cache_dir / rel_cache_dir
 
-        with self.lock:
+        with self.lock: # locking to ensure the dir is not just being created
             if dirpath.exists():
-                assert cache_path.exists()
+                assert cache_path.exists(), cache_path
                 return cache_path
-
-            elif not DISABLE_REMOTE_CACHE:
-                url = os.path.join(REMOTE_CACHE_URL, f"{dirname}.tar.gz")
-                if not url_exists(url):
-                    return None
-                logger.info(
+        if DISABLE_REMOTE_CACHE:
+            return None
+        
+        url = os.path.join(REMOTE_CACHE_URL, f"{dirname}.tar.gz")
+        if not url_exists(url):
+            return None
+        logger.info(
                     f"Downloading the traced repo from the remote cache. Set the environment variable `DISABLE_REMOTE_CACHE` if you want to trace the repo locally."
                 )
-                execute(f"wget {url} -O {dirpath}.tar.gz")
+        execute(f"wget {url} -O {dirpath}.tar.gz")
 
-                with report_critical_failure(_CACHE_CORRPUTION_MSG):
-                    with tarfile.open(f"{dirpath}.tar.gz") as tar:
-                        tar.extractall(self.cache_dir)
-                    os.remove(f"{dirpath}.tar.gz")
-                    assert (cache_path).exists()
-
-                return cache_path
-
-            else:
-                return None
+        with self.lock:                
+            with report_critical_failure(_CACHE_CORRPUTION_MSG):
+                with tarfile.open(f"{dirpath}.tar.gz") as tar:
+                    tar.extractall(self.cache_dir)
+                assert (cache_path).exists()
+        os.remove(f"{dirpath}.tar.gz")
+        return cache_path
 
     def store(self, src: Path, rel_cache_dir: Path) -> Path:
         """Store a repo at path ``src``. Return its path in the cache.
